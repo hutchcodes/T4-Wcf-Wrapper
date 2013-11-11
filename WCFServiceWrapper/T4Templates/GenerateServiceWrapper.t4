@@ -1,0 +1,153 @@
+<#@ Template Language="C#" hostspecific="True" #>
+<#@ Assembly Name="EnvDTE" #>
+<#@ import namespace="EnvDTE" #>
+<#@ include File="T4Toolbox.tt" #>
+
+<#+
+
+private DTE _env = null;
+public void GetServiceWrapper(string LocalServiceName)
+{
+	var provider = Host as IServiceProvider;
+    if (provider != null) {
+        _env = provider.GetService(typeof(DTE)) as DTE;
+    }
+
+    if (_env == null) {
+        throw new InvalidOperationException("Template must be executed from Visual Studio");
+    }
+
+    EnvDTE.CodeInterface svcInterface = GetServiceInterface(LocalServiceName + @"\reference.cs");
+    foreach (var ce in svcInterface.Members)
+    {
+        var meth = ce as CodeFunction;
+        if (meth != null)
+        {
+            if (meth.Access == vsCMAccess.vsCMAccessPublic)
+            {
+                string methodSignature = GetMethodSignature(meth);
+
+                string methodCall = GetMethodCall(meth);
+
+                bool returnsVoid = false;
+                if (meth.Type.AsString.Equals("void"))
+                {
+                    returnsVoid = true;
+                }
+                #>
+        <#=methodSignature #>
+        {
+            var proxy = GetServiceClient();
+            try
+            {
+            <#+
+                if (returnsVoid)
+                {
+                       #>    proxy.<#=methodCall #>;
+                            proxy.Close();
+            <#+
+                }
+                else
+                {
+            #>    var returnValue = proxy.<#=methodCall #>;
+                proxy.Close();
+                return returnValue;
+<#+
+                }
+#>
+            }
+            catch
+            {
+                proxy.Abort();
+                throw;
+            }
+        }
+        
+<#+
+            }
+        }
+    }
+}
+
+public EnvDTE.CodeInterface GetServiceInterface(string interfaceFile)
+{
+    ProjectItem projectItem = _env.Solution.FindProjectItem(interfaceFile);
+    FileCodeModel codeModel = projectItem.FileCodeModel;
+    return FindInterface(codeModel.CodeElements);
+}
+
+public CodeInterface FindInterface(CodeElements elements)
+{
+    foreach (CodeElement element in elements)
+    {
+        CodeInterface myInterface = element as CodeInterface;
+        if (myInterface != null)
+            return myInterface;
+        myInterface = FindInterface(element.Children);
+        if (myInterface != null)
+            return myInterface;
+    }
+    return null;
+}
+
+public string GetMethodSignature(CodeFunction method)
+{
+    var methodSignature = new System.Text.StringBuilder();
+
+    methodSignature.Append("public static ");
+    methodSignature.Append(method.Type.AsString);
+    methodSignature.Append(" ");
+    methodSignature.Append(method.Name);
+    methodSignature.Append("(");
+
+    bool isFirstParameter = true;
+    foreach (var prm in method.Parameters)
+    {
+        CodeParameter p = prm as CodeParameter;
+
+        if (!isFirstParameter)
+        {
+            methodSignature.Append(", ");
+        }
+        else
+        {
+            isFirstParameter = false;
+        }
+
+        methodSignature.Append(p.Type.AsString);
+        methodSignature.Append(" ");
+        methodSignature.Append(p.Name);
+    }
+
+    methodSignature.Append(")");
+    return methodSignature.ToString();
+}
+
+public string GetMethodCall(CodeFunction method)
+{
+    var methodCall = new System.Text.StringBuilder();
+
+    methodCall.Append(method.Name);
+    methodCall.Append("(");
+
+    bool isFirstParameter = true;
+    foreach (var prm in method.Parameters)
+    {
+        CodeParameter p = prm as CodeParameter;
+
+        if (!isFirstParameter)
+        {
+            methodCall.Append(", ");
+        }
+        else
+        {
+            isFirstParameter = false;
+        }
+
+        methodCall.Append(p.Name);
+    }
+
+    methodCall.Append(")");
+    return methodCall.ToString();
+}       
+#>

@@ -1,0 +1,10 @@
+<#@ include File="T4Templates\GenerateServiceWrapper.t4" #>
+using System;
+
+namespace WCFServiceWrapper
+{
+    public static partial class SvcWrapper
+    {    
+<#      GetServiceWrapper("WcfSvc");#>
+    }
+}
